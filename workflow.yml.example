@@ -1,0 +1,129 @@
+# workflow.yml — project-specific configuration for the workflow controller.
+#
+# Copy this file to `workflow.yml` at the repository root and fill in the
+# values that match your project. The controller loads it on every
+# command. Defaults are merged under the values you supply; remove a key
+# if you want the default to take effect.
+
+# ─── Project identity ────────────────────────────────────────────────────
+# These two fields appear in `python -m tools.workflow status` and in
+# every audit log. They must match what your task contracts and intent
+# documents declare.
+
+project: "<your-project-name>"          # e.g. "lp-strategy", "billing"
+template_version: "1.1.0"               # pin to a template release
+
+# ─── Agent runtime ──────────────────────────────────────────────────────
+# The controller refuses to validate a repository whose declared runtime
+# does not match these fields. Substitute the values your AI coding tool
+# declares in its session startup.
+
+agent_runtime:
+  provider: "<your-provider>"           # free-form identifier
+  model: "<your-model-identifier>"       # the literal string your tool reports
+  context_window_tokens: 100000          # integer; controller validates match
+  allow_model_fallback: false            # must be false
+
+# ─── Protected paths ─────────────────────────────────────────────────────
+# These paths cannot be modified by a Developer. The controller
+# snapshots them before and after every Developer run and refuses any
+# change. The reviewer verifies the snapshot too.
+
+protected:
+  prefixes:
+    - ".claude/"                        # agent definitions
+    - "docs/intent/"                    # why the project exists
+    - "docs/spec/"                      # what the project does
+    - "docs/implement/"                 # how the project does it
+    - "todo/phases/"                    # task contracts
+    - "todo/schemas/"                   # structured result schemas
+    - "todo/maintenance/"               # maintenance audit trail
+    - "tools/workflow/"                 # the controller itself
+    # Add project-specific protected prefixes below. Examples:
+    # - "src/<your-package>/signing/"   # anything security-critical
+    # - "src/<your-package>/execution/"
+    # - "src/<your-package>/risk/"
+  files:
+    - "AGENTS.md"
+    - "CLAUDE.md"
+    - "README.md"
+    - "workflow.yml"
+    - "todo/README.md"
+    - "todo/config.yaml"
+
+# ─── Maintenance forbidden paths ────────────────────────────────────────
+# Even when a maintenance repair is in flight, these paths stay frozen.
+# A maintenance repair that needs to touch one of them must instead
+# return TRIAGE_REQUIRED so the Owner can route it through the
+# appropriate amendment or product task.
+
+maintenance_forbidden:
+  prefixes:
+    - ".claude/"
+    - ".github/"
+    - "docs/intent/"
+    - "docs/spec/"
+    - "todo/phases/"
+    - "todo/schemas/"
+    - "todo/maintenance/"
+    - "tools/workflow/"
+    # Add project-specific forbidden prefixes below. Examples:
+    # - "src/<your-package>/signing/"
+    # - "src/<your-package>/execution/"
+    # - "src/<your-package>/risk/"
+  files:
+    - "pyproject.toml"
+    - "requirements.in"
+    - "requirements.lock.txt"
+    - "workflow.yml"
+    - "todo/config.yaml"
+    # Add project-specific forbidden files below. Examples:
+    # - "tools/oracle/foundry.toml"
+    # - "tools/oracle/remappings.txt"
+
+# ─── Required agent definitions ─────────────────────────────────────────
+# The controller's `validate` command checks that each of these agent
+# definition files exists. Remove or add roles to match your tool's
+# available agent types.
+
+required_agents:
+  - workflow-manager
+  - stage-developer
+  - stage-reviewer
+  - issue-triager
+  - planner
+  - plan-reviewer
+  - prophet
+  - prophet-reviewer
+
+# ─── PROPHET editable scope ─────────────────────────────────────────────
+# The PROPHET layer is the only one that may create new task contracts
+# and restate intent. Everything outside this scope is refused.
+
+prophet_editable:
+  files:
+    - "README.md"
+    - "AGENTS.md"
+    - "CLAUDE.md"
+    - "todo/README.md"
+    - "todo/WORKFLOW.md"
+  prefixes:
+    - "docs/spec/"
+    - "docs/intent/"
+    - "docs/implement/"
+
+# ─── Runtime parameters ─────────────────────────────────────────────────
+# Internal mechanics you can tune.
+
+runtime_dir: "workflow-state"            # under the shared git common dir
+max_development_continuations: 1         # hard cap per attempt
+
+# ─── Amendment layer policy ─────────────────────────────────────────────
+# Optionally restrict the layers you allow in your project. The default
+# (all four enabled) is right for most projects.
+
+amendment_layers:
+  - CONTRACT
+  - SPEC
+  - PROPHET
+  - SUPERSEDE

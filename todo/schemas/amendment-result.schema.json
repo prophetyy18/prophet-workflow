@@ -1,0 +1,28 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://prophet-workflow.local/schemas/amendment-result.schema.json",
+  "title": "Planner / Prophet amendment structured result",
+  "type": "object",
+  "required": [
+    "amendment_id",
+    "outcome",
+    "summary",
+    "rationale",
+    "unresolved_questions"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "amendment_id": {
+      "type": "string",
+      "pattern": "^A[0-9]{4}$"
+    },
+    "outcome": {
+      "type": "string",
+      "enum": ["AMENDMENT_READY", "NO_CHANGE_REQUIRED", "BLOCKED"]
+    },
+    "summary": {"type": "string", "minLength": 1},
+    "rationale": {"type": "string", "minLength": 1},
+    "unresolved_questions": {"type": "array", "items": {"type": "string"}},
+    "changed_paths": {"type": "array", "items": {"type": "string"}}
+  }
+}

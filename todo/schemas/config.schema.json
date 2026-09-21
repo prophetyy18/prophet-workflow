@@ -1,0 +1,124 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://prophet-workflow.local/schemas/config.schema.json",
+  "title": "Workflow config (todo/config.yaml as JSON)",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "project",
+    "template_version",
+    "agent_runtime",
+    "tasks"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "project": {
+      "type": "string",
+      "minLength": 1
+    },
+    "template_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "intent_revision": {
+      "type": "string"
+    },
+    "spec_revision": {
+      "type": "string"
+    },
+    "agent_runtime": {
+      "type": "object",
+      "required": [
+        "provider",
+        "model",
+        "context_window_tokens",
+        "allow_model_fallback"
+      ],
+      "properties": {
+        "provider": {"type": "string", "minLength": 1},
+        "model": {"type": "string", "minLength": 1},
+        "context_window_tokens": {"type": "integer", "minimum": 1},
+        "allow_model_fallback": {"type": "boolean", "const": false}
+      }
+    },
+    "active_phase": {"type": "string"},
+    "active_task": {"type": "string"},
+    "workflow_state": {
+      "type": "string",
+      "enum": [
+        "PLANNED",
+        "READY",
+        "IN_DEVELOPMENT",
+        "AWAITING_REVIEW",
+        "CHANGES_REQUESTED",
+        "TRIAGE_REQUIRED",
+        "PLANNING",
+        "AWAITING_PLAN_REVIEW",
+        "PLAN_REVIEW_BLOCKED",
+        "OWNER_DECISION_REQUIRED",
+        "BLOCKED",
+        "APPROVED"
+      ]
+    },
+    "tasks": {
+      "type": "object",
+      "minProperties": 0,
+      "additionalProperties": {"$ref": "#/$defs/task"}
+    }
+  },
+  "$defs": {
+    "task": {
+      "type": "object",
+      "required": [
+        "phase",
+        "status",
+        "depends_on",
+        "task_file",
+        "attempt"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "phase": {
+          "type": "string",
+          "pattern": "^P[0-9]{2}$"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "PLANNED",
+            "READY",
+            "IN_DEVELOPMENT",
+            "AWAITING_REVIEW",
+            "CHANGES_REQUESTED",
+            "TRIAGE_REQUIRED",
+            "PLANNING",
+            "AWAITING_PLAN_REVIEW",
+            "PLAN_REVIEW_BLOCKED",
+            "OWNER_DECISION_REQUIRED",
+            "BLOCKED",
+            "APPROVED"
+          ]
+        },
+        "depends_on": {
+          "type": "array",
+          "items": {"type": "string", "pattern": "^T[0-9]{3}$"},
+          "uniqueItems": true
+        },
+        "task_file": {"type": "string", "minLength": 1},
+        "superseded_by": {
+          "type": ["string", "null"],
+          "pattern": "^T[0-9]{3}$"
+        },
+        "attempt": {"type": "integer", "minimum": 0},
+        "base_commit": {"type": ["string", "null"]},
+        "candidate_commit": {"type": ["string", "null"]},
+        "approved_commit": {"type": ["string", "null"]},
+        "latest_review": {"type": ["string", "null"]}
+      }
+    }
+  }
+}
