@@ -99,12 +99,35 @@ nothing else needs protecting.
   spec.md                   current hypothesis — rewritten every round
   LOG.md                    what each round actually showed — append only
   DECISIONS.md              choices and why, one line each
-tools/prophet/              optional helper (~100 lines, 5 commands)
+tools/prophet/              optional helper (~250 lines, 6 commands)
 ```
 
 There is no controller. `tools/prophet/` is a convenience for directory
-setup and gate running; deleting it leaves the workflow fully functional,
-because the workflow is three prompts and a convention.
+setup, gate running, and checking the hypothesis is genuinely falsifiable;
+deleting it leaves the workflow fully functional, because the workflow is three
+prompts and a convention.
+
+## What is checked, and what is trusted
+
+Two properties are enforced by `tools/prophet/`, because they decay when left as
+prose:
+
+- **the hypothesis is falsifiable** — `check` requires the three slots and
+  rejects an Outcome made of unobservable words, while allowing comparatives
+  that carry a number;
+- **the gates did not regress** — `baseline` records existing findings and
+  refuses to record when a gate could not run at all, so an empty baseline can
+  never hide a later regression.
+
+One property is enforced by convention rather than code: the builder does not
+write `.prophet/spec.md`. That is the single thing worth protecting, because a
+builder that can rewrite the hypothesis it is measured against defeats the
+measurement.
+
+Everything else is trusted: the twelve-dimension scan in the shaper, the
+critic's judgement, and the human's decision at SHOW. These are prompts. They
+are the product, and they are meant to be edited per project — but they are
+judgement calls, and the design assumes you will sometimes disagree with them.
 
 ## Why there is no machinery
 

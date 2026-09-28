@@ -40,7 +40,7 @@ The loop replaces the state machine. Measurements and reasoning:
   each round, record decisions).
 - `.prophet/` convention: `spec.md` (rewritten every round), `LOG.md` (what
   actually happened, append-only), `DECISIONS.md` (choices and why).
-- `tools/prophet/`: `init`, `new`, `baseline`, `gates`, `status`.
+- `tools/prophet/`: `init`, `new`, `baseline`, `gates`, `status`, `check`.
 - Incremental gate judgement — `baseline` records existing findings, `gates`
   fails only when a slice adds findings. A red baseline blocks nobody.
 - `baseline` refuses to record when a gate cannot run at all, since an empty

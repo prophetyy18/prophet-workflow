@@ -96,6 +96,7 @@ your project's content; the agents are just text you can edit.
 ```bash
 # 1. SHAPE — with the shaper, until you have a falsifiable hypothesis
 #    written into .prophet/spec.md
+python3 -m tools.prophet check        # refuses until it really is falsifiable
 
 # 2. BUILD — give the builder the hypothesis and a worktree
 python3 -m tools.prophet new report-page
@@ -117,6 +118,38 @@ python3 -m tools.prophet gates --dir .prophet-worktrees/report-page
 
 then hand the candidate to the `critic`. It cannot fix anything and cannot
 approve; it reports what it found and what the next hypothesis should be.
+
+## The hypothesis, and why it is checked
+
+Each round writes three lines into `.prophet/spec.md`:
+
+```markdown
+**Change:** dedupe by content hash instead of title prefix
+**Outcome:** 14 rows instead of 20, with 0 false merges
+**Verify by:** open localhost:8000 and count
+```
+
+`prophet check` refuses to pass until all three exist and the **Outcome** could
+be proved false. It rejects Outcomes built from words that no observation can
+settle — *better*, *faster*, *robust*, *fewer* — while letting through the
+measurable versions: a comparative is fine when the line carries a number, so
+"fewer rows: 8 instead of 20" passes and "fewer rows" does not.
+
+This is the one place where prose would have decayed. "Falsifiable" is the
+load-bearing property of the entire workflow, and an instruction to be
+falsifiable is an instruction the model will eventually satisfy in letter and
+not in spirit. A word list plus a slot check cannot drift that way, and it is
+covered by tests.
+
+The shaper also runs a twelve-dimension scan before proposing (failure
+behavior, data lifetime, concurrency, security, observability, and so on),
+scaled to the tier — four dimensions on an exploratory round, all twelve before
+anything irreversible. That part is still prompt-level rather than checked,
+because a scan that reports its own coverage is how you get a check nobody
+reads.
+
+Unresolved choices are marked `[NEEDS CLARIFICATION: ...]` in the spec, capped
+at three, so the builder cannot confidently build the thing you did not mean.
 
 ## Gates
 

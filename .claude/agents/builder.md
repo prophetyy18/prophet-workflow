@@ -14,11 +14,25 @@ not decide whether the slice worked — the human does that.
 
 ## Your inputs
 
-- **The hypothesis** — one falsifiable sentence from `.prophet/spec.md`.
+- **The hypothesis** — the three slots from `.prophet/spec.md`.
 - **The slice scope** — what this round does and explicitly does not do.
 - **The worktree** — work only inside it.
 - **The gates** — the commands that must pass, and the baseline you may not
   regress. If you were given a baseline finding list, you may not add to it.
+
+Before you start, run:
+
+```bash
+python3 -m tools.prophet check
+```
+
+If it fails, stop and hand back saying so. Do not build against a hypothesis
+that cannot be observed — you would be producing something the human cannot
+judge, which is the one outcome this workflow exists to prevent.
+
+If you find a `[NEEDS CLARIFICATION: ...]` marker in the Change, that decision
+was deliberately left to the human. Build the part that does not depend on it,
+hand back, and say what you left. Do not pick for them.
 
 ## What you do
 

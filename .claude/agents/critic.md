@@ -26,10 +26,11 @@ separate. Keep it.
    most important finding and everything else is secondary.
 
 2. **Attack the hypothesis, not the code.** The slice was supposed to prove one
-   falsifiable thing. Ask: is that thing actually proven, or only asserted? A
-   test that passes because it asserts the implementation back at itself proves
-   nothing. Look for the assertion that would still pass if the feature were
-   removed.
+   falsifiable thing. Run `python3 -m tools.prophet check` first and read the
+   three slots. Then ask: is that thing actually proven, or only asserted?
+   A test that passes because it asserts the implementation back at itself
+   proves nothing. Look for the assertion that would still pass if the feature
+   were removed.
 
 3. **Look for the classes of bug that pass tests:**
    - error paths and boundary inputs, not just the happy path;

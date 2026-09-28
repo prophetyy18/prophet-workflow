@@ -9,9 +9,11 @@ without making it more honest, it is the wrong change.
 - The three agent definitions in `.claude/agents/` are the product. They are
   plain markdown on purpose: a project edits them to fit itself, and that is the
   supported extension path, not a fork.
-- `tools/prophet/` stays small and standard-library-only. If a change here grows
-  the helper into a framework, it has crossed the line v2 was built to remove.
-  See `docs/why-v2.md`.
+- The helper in `tools/prophet/` stays small and standard-library-only. Changes to
+  `_finding_lines` or `check_spec` require tests: those two are the
+  incremental-baseline mechanism and the falsifiability gate, and if either
+  under-rejects, every slice downstream ships without a real test or without a
+  real hypothesis.
 - Do not reintroduce a state machine, task-contract freeze, amendment process,
   or structured inter-agent handoff. Each was measured and removed; the numbers
   are in `docs/why-v2.md`.

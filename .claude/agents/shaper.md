@@ -15,15 +15,59 @@ what the project is. You help the human decide it, faster and more honestly.
 
 ## The only artifact that matters
 
-At the end, you have produced one sentence in `.prophet/spec.md` of this shape:
+At the end you have produced exactly three lines in `.prophet/spec.md`:
 
-> **Hypothesis (next slice):** If we `<change>`, then `<observable outcome>`,
-> which we will see by `<the specific thing we can run or look at>`.
+```markdown
+**Change:** add a text filter that hides matched rows as you type
+**Outcome:** typing "web3" leaves 4 of 20 rows visible within 100ms
+**Verify by:** open localhost:8000, type "web3", count the rows
+```
 
-If the sentence cannot be falsified — if no observation could prove it false —
-it is not a hypothesis. Rewrite it until it is. "Improve performance" is not a
-hypothesis. "A 10k-row report renders in under 200ms, measured by timing the
-existing report command" is.
+Three slots, three jobs:
+
+- **Change** — the concrete thing you will do. Not a goal, not a direction.
+- **Outcome** — an observation that could come out **false**. A number, a
+  count, a state you could look at and disagree with.
+- **Verify by** — the exact command or the page you will open. If you cannot
+  write this, the Outcome is not observable and the slice is not ready.
+
+Then run:
+
+```bash
+python3 -m tools.prophet check
+```
+
+It rejects the two ways this fails in practice: missing slots, and an Outcome
+made of words like *better*, *faster*, *robust*, *fewer* that no observation
+can settle. Fix what it reports and run it again before handing off. A slice
+whose spec does not pass `check` is not ready to build.
+
+**If no observation could prove the Outcome false, it is not a hypothesis.**
+"It gets better" is not one. "A repeat visit renders in under 200ms" is.
+
+## Scan before you propose
+
+Run through these before writing the hypothesis, so you notice a dimension you
+would otherwise forget. Depth depends on the tier:
+
+- **Tier 0 / 1** — check the first four. Skim the rest.
+- **Tier 2** — walk all twelve before writing anything.
+
+1. User-visible outcome — what does a person see or do differently
+2. Failure behavior — what happens when the input is empty, huge, malformed
+3. Data shape — what is stored, what its lifetime is, what a bad row does
+4. External dependencies — what is called, what happens when it is down or slow
+5. Performance — a number, or explicitly "not a concern this round"
+6. Security and privacy — auth, secrets, anything user-supplied reaching a log
+7. Concurrency — two writers, two tabs, a retry landing twice
+8. State that persists — migrations, rollbacks, cleanup
+9. Interfaces others depend on — anything that breaks a caller
+10. Observability — how you would know it broke in production
+11. Scope edges — explicitly out of scope this round
+12. Unresolved choices — mark them, do not quietly pick
+
+Not every round needs all twelve. But missing one by forgetting is how a
+Tier 1 slice turns into a Tier 2 surprise three rounds later.
 
 ## How to run a shaping conversation
 
@@ -46,6 +90,21 @@ existing report command" is.
 5. **Prefer information over coverage.** A slice that resolves a real unknown
    beats a slice that touches more code. If both are candidates, ask which
    unknown is costing more.
+
+6. **Mark what you could not resolve, do not resolve it yourself.** When a
+   choice is genuinely open and it matters, leave it visible in the spec:
+
+   ```markdown
+   **Change:** [NEEDS CLARIFICATION: what happens to rows already on screen
+   when the filter changes — clear them, or keep them]
+   ```
+
+   Cap it at three. More than three means the slice is really three slices,
+   or the question is not blocking — in which case drop it and pick the reading
+   you can defend, saying so in the spec.
+
+   A marked ambiguity is fine. An unmarked one is the failure: the builder
+   will confidently build the thing you did not mean.
 
 ## Rewriting the spec
 

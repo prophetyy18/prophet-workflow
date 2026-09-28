@@ -37,15 +37,24 @@ GATES_FILE = PROPHET / "gates.txt"
 STARTER_SPEC = """# Current hypothesis
 
 <!-- Rewritten every round. Keep this file short enough to read in a minute.
-     History belongs in LOG.md; settled choices belong in DECISIONS.md. -->
+     History belongs in LOG.md; settled choices belong in DECISIONS.md.
+     Verify the shape with: python -m tools.prophet check -->
 
 **Round:** _(unset)_
 **Tier:** _(0 / 1 / 2 — see ARCHITECTURE.md)_
+**Rollback:** _(required for Tier 2; what undoes this if it goes wrong)_
 
 ## Hypothesis
 
-If we <change>, then <observable outcome>, which we will see by
-<the specific thing we can run or look at>.
+**Change:** _(the concrete thing you will do)_
+**Outcome:** _(the observable result — a number, a count, a state you could see)_
+**Verify by:** _(the exact command or page you open that shows it)_
+
+<!--
+An Outcome must be able to be proved FALSE. "it gets faster" cannot be;
+"a repeat visit renders in under 200ms" can. `prophet check` rejects the
+first kind. The placeholder text in _( ) counts as not-yet-written.
+-->
 
 ## Slice scope
 
@@ -374,6 +383,339 @@ def _current_hypothesis(spec: str) -> str | None:
     return None
 
 
+# --- hypothesis shape checking -------------------------------------------
+#
+# "Falsifiable" is the load-bearing word of this whole workflow. Left as prose
+# in a prompt it degrades within a few rounds, because nothing enforces it.
+# These checks make it mechanical: a hypothesis must name three things, and the
+# observable outcome must not be a word that cannot be measured.
+
+SLOTS = ("Change", "Outcome", "Verify by")
+
+# Words that cannot be observed, so an outcome containing one is not falsifiable.
+# Deliberately over-inclusive: a false positive costs the shaper one rewrite of
+# a sentence, a false negative ships a slice that proves nothing.
+VAGUE_TERMS = (
+    "as appropriate",
+    "as needed",
+    "as necessary",
+    "as much as possible",
+    "if possible",
+    "to be determined",
+    "to be decided",
+    "to be worked out",
+    "user-friendly",
+    "best possible",
+    "best practice",
+    "intuitive",
+    "intuitiveness",
+    "seamless",
+    "seamlessly",
+    "elegant",
+    "elegantly",
+    "robust",
+    "properly",
+    "correctly",
+    "appropriately",
+    "adequately",
+    "reasonably",
+    "suitable",
+    "optimal",
+    "efficient",
+    "efficiently",
+    "performant",
+    "scalable",
+    "flexible",
+    "straightforward",
+    "significant",
+    "substantially",
+    "improve",
+    "improved",
+    "improvement",
+    "better",
+    "faster",
+    "quicker",
+    "quickly",
+    "enough",
+    "good",
+    "nice",
+    "clean",
+    "simple",
+    "proper",
+    "tbd",
+    "todo",
+    "???",
+)
+
+# Derived forms a \b-only match misses: "cleaner", "simpler", "improves",
+# "fastest". A \b-only check skips exactly the words people reach for when they
+# are being vague, which defeats the purpose.
+#
+# Listed explicitly rather than generated from stems: English does not derive
+# predictably (simple -> simpler drops the e), and guessing produced false
+# positives on unrelated words like "goods". An explicit list is auditable.
+VAGUE_DERIVED = (
+    "cleaner",
+    "cleanest",
+    "cleanly",
+    "simpler",
+    "simplest",
+    "improves",
+    "improving",
+    "improved",
+    "better",
+    "best",
+    "faster",
+    "fastest",
+    "quicker",
+    "quickest",
+    "slower",
+    "slowly",
+    "slowness",
+    "more",
+    "less",
+    "fewer",
+    "most",
+    "least",
+    "higher",
+    "lower",
+    "larger",
+    "bigger",
+    "smaller",
+    "greater",
+    "worse",
+    "worst",
+    "degrades",
+    "degrade",
+    "degraded",
+    "efficiently",
+    "efficiency",
+    "inefficient",
+    "robustness",
+    "properly",
+    "proper",
+    "goodness",
+    "good",
+    "safely",
+    "safety",
+    "nicer",
+    "nicest",
+    "optimally",
+    "optimum",
+    "smoothly",
+    "smooth",
+    "elegantly",
+    "elegant",
+    "usability",
+    "readability",
+    "maintainability",
+    "reliability",
+)
+
+_ALL_VAGUE = tuple(VAGUE_TERMS) + VAGUE_DERIVED
+
+_VAGUE_RE = re.compile(
+    r"\b(" + "|".join(re.escape(t) for t in sorted(_ALL_VAGUE, key=len, reverse=True)) + r")\b",
+    re.IGNORECASE,
+)
+
+
+_NUMERIC = re.compile(r"\d")
+
+# Of the vague words, these are comparative: vague alone ("fewer errors"),
+# measurable with a number present ("0 errors instead of 3").
+_COMPARATIVES = (
+    "more",
+    "less",
+    "fewer",
+    "most",
+    "least",
+    "higher",
+    "lower",
+    "larger",
+    "bigger",
+    "smaller",
+    "greater",
+    "better",
+    "best",
+    "worse",
+    "worst",
+    "faster",
+    "fastest",
+    "quicker",
+    "quickest",
+    "slower",
+    "improves",
+    "improved",
+    "improvement",
+    "degrades",
+    "degrade",
+    "degraded",
+    "increase",
+    "increases",
+    "increase",
+    "decrease",
+    "decreases",
+    "reduce",
+    "reduces",
+    "saves",
+    "gain",
+    "savings",
+)
+
+# Comparative words are vague on their own ("fewer errors") but measurable when
+# a number is nearby ("fewer errors, 0 instead of 3"). The number is the actual
+# test, so exempt the word rather than special-casing every phrase.
+_COMPARATIVE_RE = re.compile(
+    r"\b(" + "|".join(re.escape(t) for t in _COMPARATIVES) + r")\b", re.IGNORECASE
+)
+
+
+def _vague_hits(text: str) -> list[tuple[str, int, str]]:
+    """Return (term, line number, line) for each vague term in `text`.
+
+    A comparative word on a line that also contains a number is not a finding:
+    "12 rows instead of 15" is measurable, "more rows" is not.
+    """
+    hits = []
+    for n, line in enumerate(text.splitlines(), start=1):
+        has_number = bool(_NUMERIC.search(line))
+        seen: set[str] = set()
+        for m in _VAGUE_RE.finditer(line):
+            term = m.group(1).lower()
+            if term in seen:
+                continue
+            # Exempt a comparative ONLY when this line carries a number.
+            # "12 rows instead of 15" is measurable; "more rows" is not.
+            if has_number and _COMPARATIVE_RE.fullmatch(term):
+                continue
+            seen.add(term)
+            hits.append((term, n, line.strip()))
+    return hits
+
+
+# Placeholder markers. A starter template ships with `_(..._)` slots; those
+# must read as "not written yet", not as a filled-in value. Without this the
+# blank starter spec passes the falsifiability check, which is the worst
+# possible failure: the gate says yes before anyone has thought.
+_PLACEHOLDERS = re.compile(
+    r"_\(.*?\)_|^<.*>$|^\.\.\.$|^\s*tbd\s*$|\bTODO\b",
+    re.IGNORECASE,
+)
+
+
+def _is_placeholder(value: str) -> bool:
+    """True if a slot value is still the unfilled starter template."""
+    return not value.strip() or bool(_PLACEHOLDERS.search(value.strip()))
+
+
+def _slot_values(spec: str) -> dict[str, str | None]:
+    """Extract the three required slot values from a spec.
+
+    A slot present but still holding the starter template's placeholder is
+    reported as missing, not as filled in.
+    """
+    out: dict[str, str | None] = {}
+    for slot in SLOTS:
+        m = re.search(rf"^\s*\*\*{re.escape(slot)}:?\*\*:?\s*(.+)$", spec, re.M)
+        if not m:
+            out[slot] = None
+            continue
+        value = m.group(1).strip()
+        out[slot] = None if _is_placeholder(value) else value
+    return out
+
+
+def check_spec(spec: str) -> tuple[list[str], list[str]]:
+    """Check a spec's hypothesis. Returns (errors, warnings)."""
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    slots = _slot_values(spec)
+    missing = [s for s in SLOTS if not slots[s]]
+    if missing:
+        errors.append(
+            "the hypothesis must name three things, and these are missing: "
+            + ", ".join(missing)
+            + "\n      use this shape:\n"
+            + "\n".join(f"      **{s}:** <...>" for s in SLOTS)
+        )
+        return errors, warnings
+
+    outcome = slots["Outcome"] or ""
+    hits = _vague_hits(outcome)
+    if hits:
+        listed = ", ".join(sorted({h[0] for h in hits}))
+        errors.append(
+            f"the outcome is not measurable — it contains: {listed}\n"
+            f'      "{outcome.strip()[:120]}"\n'
+            f"      rewrite it as something an observation could prove false.\n"
+            f'      bad:  it gets "better"\n'
+            f"      good: second open of the same feed is under 200ms, timed with curl -w"
+        )
+
+    for slot in ("Change", "Verify by"):
+        value = slots[slot] or ""
+        for term, line_no, line in _vague_hits(value):
+            warnings.append(f"**{slot}** (line {line_no}) contains {term!r}: {line[:100]}")
+
+    # Warn about vague wording in the rest of the spec, but skip the template's
+    # own instructional text. Scanning the commentary is how you get a check
+    # nobody reads.
+    prose = _strip_html_comments(spec)
+    seen: set[str] = set()
+    for term, line_no, line in _vague_hits(prose):
+        msg = f"line {line_no} contains {term!r}: {line[:100]}"
+        if msg not in seen:
+            seen.add(msg)
+            warnings.append(msg)
+    return errors, warnings
+
+
+def _strip_html_comments(spec: str) -> str:
+    """Blank out <!-- ... --> guidance so it is not scanned for vagueness."""
+    return re.sub(r"<!--.*?-->", lambda m: "\n" * m.group(0).count("\n"), spec, flags=re.S)
+
+
+def cmd_check(args: argparse.Namespace) -> int:
+    path = Path(args.file) if args.file else SPEC
+    if not path.exists():
+        print(f"no {path} — run `python -m tools.prophet init` first", file=sys.stderr)
+        return 1
+    spec = path.read_text(encoding="utf-8")
+    slots = _slot_values(spec)
+    if _current_hypothesis(spec) is None and not slots["Change"]:
+        print(f"no hypothesis in {path}")
+        print("expected these three lines under a '## Hypothesis' heading:")
+        for slot in SLOTS:
+            print(f"  **{slot}:** <...>")
+        return 1
+
+    errors, warnings = check_spec(spec)
+
+    t = re.search(r"\*\*Tier:?\*\*:?\s*(.*)", spec)
+    tier = t.group(1).strip() if t else "?"
+
+    if warnings:
+        print("warnings (vague wording outside the outcome; usually fine):")
+        for w in warnings[:20]:
+            print(f"  {w}")
+        if len(warnings) > 20:
+            print(f"  ... and {len(warnings) - 20} more")
+        print()
+
+    if errors:
+        print(f"hypothesis is not yet falsifiable  (tier {tier}):")
+        for e in errors:
+            print(f"  - {e}")
+        return 1
+
+    print(f"hypothesis is falsifiable  (tier {tier})")
+    for slot in SLOTS:
+        print(f"  {slot:<11} {(slots[slot] or '')[:90]}")
+    return 0
+
+
 def cmd_status(_: argparse.Namespace) -> int:
     if not SPEC.exists():
         print("no .prophet/ — run `python -m tools.prophet init`", file=sys.stderr)
@@ -426,6 +768,10 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("status", help="show current hypothesis and round count").set_defaults(
         fn=cmd_status
     )
+
+    sp = sub.add_parser("check", help="verify the current hypothesis is actually falsifiable")
+    sp.add_argument("--file", help="path to a spec file (default .prophet/spec.md)")
+    sp.set_defaults(fn=cmd_check)
 
     args = p.parse_args(argv)
     return int(args.fn(args))
