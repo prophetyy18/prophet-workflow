@@ -1,26 +1,31 @@
 # Repository policy for coding agents
 
-This repository contains reusable workflow machinery, not product code. Keep the
-controller generic: project names, model identifiers, protected paths, and domain
-rules belong in `workflow.yml` or in the consuming repository.
+This repository contains a reusable development **loop** — prompts and a small
+helper — not a governance engine. If a change makes the workflow heavier to run
+without making it more honest, it is the wrong change.
 
 ## Change boundaries
 
-- Preserve the separation documented in `ARCHITECTURE.md`: machinery in
-  `tools/workflow/`, project policy in `workflow.yml`, and consumer content in
-  `todo/` and `docs/`.
-- Do not copy product-specific checks, paths, dependencies, credentials, or model
-  names into the controller.
-- Behavioral changes require regression tests. Cover the success path and the
-  invariant or failure path the change protects.
-- Keep persisted records backward-compatible within a major version. New record
-  fields should normally be optional when reading old state.
-- Never weaken path protection, commit identity checks, role separation, or
-  structured-result validation merely to make a test pass.
+- The three agent definitions in `.claude/agents/` are the product. They are
+  plain markdown on purpose: a project edits them to fit itself, and that is the
+  supported extension path, not a fork.
+- `tools/prophet/` stays small and standard-library-only. If a change here grows
+  the helper into a framework, it has crossed the line v2 was built to remove.
+  See `docs/why-v2.md`.
+- Do not reintroduce a state machine, task-contract freeze, amendment process,
+  or structured inter-agent handoff. Each was measured and removed; the numbers
+  are in `docs/why-v2.md`.
+- Do not add runtime dependencies. The helper must stay installable anywhere.
+- Changes to finding extraction in `_finding_lines` require tests. That function
+  is the incremental-baseline mechanism; if it under-reports, every regression
+  gate in every consuming project becomes decorative.
 
 ## Verification
 
-Before handing off a change, run `make check` when development dependencies are
-available. At minimum run `python3 -m compileall -q tools scripts tests` and
-`python3 -m unittest discover -s tests -v`. Inspect the diff and report skipped
-checks explicitly.
+```bash
+make check
+```
+
+which runs pytest, ruff, and strict mypy. Behavioral changes require a test
+covering both the success path and the failure path the change protects. Report
+any check you skipped.

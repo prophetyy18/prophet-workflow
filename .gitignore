@@ -24,8 +24,8 @@ dist/
 .idea/
 .vscode/
 
-# Consumer runtime state lives in the shared Git directory, but keep local
-# fallbacks and worktrees out of source control as well.
-workflow-state/
-*-worktrees/
-.workflow/
+# Workflow runtime state and per-slice worktrees.
+# `.prophet/` is NOT ignored: spec.md / LOG.md / DECISIONS.md are the
+# project's thinking and belong in version control.
+.prophet/baseline.json
+.prophet-worktrees/

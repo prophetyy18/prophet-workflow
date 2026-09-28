@@ -1,180 +1,128 @@
 # Architecture
 
-The workflow separates **pure machinery** from **parameterized policy** from
-**project content**. Every piece of code that could vary by project lives
-in `workflow.yml`. Everything that must not vary lives in `tools/workflow/`.
+Prophet Workflow is a **loop**, not a state machine. Everything in this
+repository exists to make one round of that loop cheap enough to run many
+times, and honest enough that the human knows what changed.
 
-## The three layers
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│ Layer 3: Project content                                    │
-│   - todo/config.yaml, todo/phases/P*/T*.md                  │
-│   - docs/intent/, docs/spec/, docs/implement/               │
-│   - the actual application code                             │
-│   - CLAUDE.md, AGENTS.md, README.md                         │
-├─────────────────────────────────────────────────────────────┤
-│ Layer 2: Parameterized policy (workflow.yml)                │
-│   - project name, agent_runtime                             │
-│   - protected prefixes and files                            │
-│   - maintenance forbidden prefixes and files                 │
-│   - required agent definitions                              │
-│   - PROPHET editable paths                                  │
-│   - runtime dir name, max continuations                     │
-├─────────────────────────────────────────────────────────────┤
-│ Layer 1: Pure machinery (tools/workflow/)                   │
-│   - state machine                                           │
-│   - SHA / ID patterns                                       │
-│   - git worktree management                                 │
-│   - protected path snapshot                                 │
-│   - structured result validation                            │
-│   - amendment / maintenance lifecycle                       │
-│   - continuation mechanics                                  │
-└─────────────────────────────────────────────────────────────┘
-```
-
-A consumer only edits Layer 3. Layer 2 is set once per project and rarely
-touched. Layer 1 is updated by bumping the template version.
-
-## The state machine
+## The loop
 
 ```
-              ┌──────────┐
-              │ PLANNED  │◄──────────────────┐
-              └────┬─────┘                   │
-                   │ ready                   │
-                   ▼                         │
-              ┌──────────┐                   │
-              │  READY   │                   │
-              └────┬─────┘                   │
-                   │ prepare-develop         │
-                   ▼                         │
-              ┌──────────────┐               │
-              │IN_DEVELOPMENT│               │
-              └─┬────┬───┬───┘               │
-                │    │   │                   │
-   CANDIDATE_   │    │   │ TRIAGE_           │
-   READY        │    │   │ REQUIRED          │
-                │    │   └──►────────────┐   │
-                │    │ BLOCKED           │   │
-                ▼    ▼                   ▼   │
-        ┌──────────┐ ┌─────────┐ ┌────────────┐
-        │AWAITING_ │ │ BLOCKED │ │   TRIAGE_  │
-        │ REVIEW   │ └────┬────┘ │  REQUIRED  │
-        └─┬──┬──┬──┘      │      └─┬──┬───┬───┘
-          │  │  │         │        │  │   │
-   APPROVED│  │  │TRIAGE_  │        │  │   │
-          │  │  │REQUIRED │        │  │   │
-          │  │  └────┐    │        │  │   │
-          ▼  ▼       ▼    ▼        ▼  ▼   ▼
-       APPROVED  CHANGES_  ...   (issue-triager routes
-                 REQUESTED         to implementation repair,
-                                  planning, owner decision,
-                                  or external blocker)
+  SHAPE ──▶ BUILD ──▶ SHOW ──▶ DECIDE ──▶ FOLD
+    ▲                                      │
+    └──────────────────────────────────────┘
 ```
 
-The full transition table lives in `tools/workflow/core.py` as
-`ALLOWED_TRANSITIONS`. Any transition not in the table is illegal.
+| Step | Who | Produces |
+|---|---|---|
+| SHAPE | human + shaper | one falsifiable hypothesis in `.prophet/spec.md` |
+| BUILD | builder | a commit on a branch, gates run, results reported |
+| SHOW | builder | a runnable artifact a human can open or read |
+| DECIDE | human | keep / redirect / discard |
+| FOLD | shaper | spec rewritten, outcome appended to `LOG.md`, decisions recorded |
 
-## The amendment axis
+Each round is one small, verifiable slice. "Verifiable" is the load-bearing
+word: the human must be able to look at a produced artifact, not read a summary
+and take it on faith.
 
-Owner-directed changes happen on a separate axis from task execution. A
-task can be `PLANNED` while an amendment is in flight; the amendment never
-creates implementation attempts on the target tasks.
+## The central claim: ceremony scales with irreversibility
 
-Four layers, each with its own author and reviewer:
+Most process failures come from spending the wrong amount of ceremony in the
+wrong place. This repository's entire risk model follows one rule:
 
-| Layer | Edits | Authored by | Reviewed by |
-|---|---|---|---|
-| `CONTRACT` | task contracts and `depends_on` | `planner` | `plan-reviewer` |
-| `SPEC` | task contracts + `docs/spec/` | `planner` | `plan-reviewer` |
-| `SUPERSEDE` | `superseded_by` field only | `planner` | `plan-reviewer` |
-| `PROPHET` | intent, spec, implement, plan restructure, new task creation | `prophet` | `prophet-reviewer` |
+> **Uncertainty and irreversibility are different axes. Weight ceremony by
+> irreversibility. Weight exploration by information gain.**
 
-The `PROPHET` layer is the only one that may create new task contracts;
-it may never modify an existing one. This guarantees that an existing
-contract's approval always describes the same candidate.
+The failure mode this replaces: a light process on irreversible work (ship it
+and find out), and a heavy process on uncertain work (six approvals before
+learning whether the approach works at all).
 
-Amendment records are durable. A successful amendment closes as `APPROVED`; an
-Owner can close an unapplied change as `ABANDONED` with `withdraw-amendment`.
-Closed records no longer occupy the single amendment lane, but their IDs remain
-consumed. Retries also retain `original_base_commit`, so a PROPHET repair may
-edit files created by its own earlier attempt while files that predated the
-amendment remain frozen.
+### Tier 0 — disposable
 
-## The maintenance axis
+Exploration, spikes, one-off scripts, "does this library even do X".
 
-A bounded, low-risk implementation defect outside an active task can be
-repaired without inventing a numbered product task. The repair declares
-its `allowed_paths` and `verification_commands` up front; the controller
-refuses any change outside that boundary.
+- Loop: BUILD → SHOW, then stop.
+- No worktree, no critic, no gates.
+- A branch that can be deleted at will.
 
-Maintenance is **not** an escape hatch for spec or intent changes — those
-go through the amendment axis.
+### Tier 1 — product (the default)
 
-## The continuation mechanic
+Ordinary feature work. Roughly 95% of a project's slices.
 
-A Developer that runs out of context budget may write a
-`CONTINUATION_REQUIRED` result with a structured `continuation` block
-(`completed_work`, `remaining_work`, `next_actions`, `changed_paths`).
-The Manager then runs `continue-develop`, which spawns a fresh Developer
-in the same attempt and worktree. The continuation count is bounded
-(typically 1) so the budget is finite.
+- Full loop, worktree isolated, full gates with an incremental baseline.
+- Critic optional; recommended when the slice touches shared surface.
+- No approvals, no JSON handoff, no state machine.
 
-If the developer's session is killed by a hard turn limit before it can
-write the handoff, the Manager may pass `--max-turns-exhausted`. The
-controller synthesizes a minimal checkpoint from the actual worktree state.
-This flag is **not** a substitute for a proper `CONTINUATION_REQUIRED`
-handoff — it only exists because the model cannot speak past its budget.
+### Tier 2 — irreversible
 
-## The protected path invariant
+Anything whose cost of being wrong is not bounded by a revert: schema
+migrations, public API changes, anything touching money, keys, credentials,
+deleting data, or sending anything outward.
 
-Before a Developer starts, the controller snapshots every protected file
-(`workflow.yml` `protected.prefixes` + `protected.files`). After the
-Developer finishes, the controller re-snapshots. If any file in the
-protected set has changed, the candidate is refused. The reviewer can
-therefore trust that `docs/intent/`, `docs/spec/`, the workflow code, and
-the task contracts are exactly as they were at the base commit.
+- SHAPE gets an extra round: a critic runs against the hypothesis itself
+  before any code is written.
+- The slice must state its rollback path **before** implementation starts.
+- Human confirms explicitly, having read the artifact.
+- If a slice mixes tiers, only the Tier 2 part gets this treatment. The
+  surrounding work stays Tier 1.
 
-The same snapshot mechanism protects the amendment and maintenance
-attempts.
+Tiers are assigned by **what the slice does**, not by which module it lives in.
+A Tier 2 predicate is narrow; routing it through a slow lane for everything
+that imports it is the same mistake as a waterfall.
 
-## Upgrade protocol
+## What this repository does not contain, and why
 
-Template versions follow semantic versioning.
+Each of these existed in v1. The measurement that motivated removing it is in
+`docs/why-v2.md`; the short version:
 
-- **PATCH**: bug fixes, doc fixes, internal refactors. No seam changes.
-- **MINOR**: new commands, new optional fields, new agent roles. Existing
-  `workflow.yml` continues to work unchanged.
-- **MAJOR**: state machine changes, schema-required field changes, seam
-  semantic changes. Consumer must update `workflow.yml`.
+| Removed | Reason |
+|---|---|
+| Task state machine (`todo/config.yaml`, 12 states) | State belongs in git. A second source of truth drifts, and repairing the drift consumed more effort than the work it tracked. |
+| Amendment axis (4 layers) | Rewriting a plan is the normal case, not an exception. Requiring a four-role ceremony to change a sentence in a document made the document expensive to improve. |
+| Structured JSON handoff | Its consumer was another agent. The human now reads an artifact directly, so the intermediate representation is pure cost. |
+| Protected-path snapshots | A CI check answers the same question — "did this diff touch something it should not" — without a mechanism to maintain. |
+| Retirement semantics (`SUPERSEDE`) | Git already keeps history. A commit does not need to be retired; it needs to be superseded by newer code. |
+| Single-active-work lane | Slices that touch disjoint files can proceed at once. Serializing them costs real time and buys nothing. |
+| Constitutional / escalation vocabulary | Governance that can be rewritten by the project is not constitutional. Removing the need for it is simpler than defining it. |
 
-A consumer pins to a version with the `template_version` field in
-`workflow.yml`. To upgrade:
+**What remains is a defense against one specific failure**: the builder
+silently rewriting the project's rules so its own output passes review. That
+is prevented by making `.prophet/spec.md` un-writable by the builder, and
+nothing else needs protecting.
 
-```bash
-# Fetch the new template version.
-git fetch template v1.1.0
+## Files
 
-# Merge selectively — only Layer 1 directories.
-git checkout v1.1.0 -- tools/workflow/ todo/schemas/ .claude/agents/
-
-# Validate.
-python -m tools.workflow validate
-python -m tools.workflow status
+```
+.claude/agents/builder.md   the slice builder
+.claude/agents/critic.md    independent attacker + next-slice proposer
+.claude/agents/shaper.md    hypothesis writer + spec rewriter
+.prophet/                   created in the consuming project
+  spec.md                   current hypothesis — rewritten every round
+  LOG.md                    what each round actually showed — append only
+  DECISIONS.md              choices and why, one line each
+tools/prophet/              optional helper (~100 lines, 5 commands)
 ```
 
-The Manager role is responsible for keeping the consumer's content
-(`docs/intent/`, `docs/spec/`, task contracts) compatible with the new
-template.
+There is no controller. `tools/prophet/` is a convenience for directory
+setup and gate running; deleting it leaves the workflow fully functional,
+because the workflow is three prompts and a convention.
 
-## What you must never do
+## Why there is no machinery
 
-- Edit `tools/workflow/` from a Developer agent. It is protected.
-- Edit `docs/intent/` or `docs/spec/` from a Developer agent. They are
-  protected.
-- Edit task contracts from a Developer agent. They are protected.
-- Edit `workflow.yml` from a Developer agent. It is protected.
-- Use the maintenance route to make a behavioral change. Maintenance is
-  for bugs only.
-- Self-approve. The author and the reviewer must be different sessions.
+A workflow template that projects must fork is a workflow template that will be
+forked. v1 tried to prevent forks by making the machinery constitution — and
+guaranteed the fork by making the machinery 2,472 lines of state machine that
+every real project needed to modify.
+
+The v2 template contains no machine, so a project that wants different rules
+edits its own prompt files. That is the same act as editing `CLAUDE.md`, it
+requires no governance process, and it creates no version conflict.
+
+Upgrades work because the prompts are text: copy the new prompt files over an
+existing project. `.prophet/spec.md`, `LOG.md`, and `DECISIONS.md` are the
+project's content and are never touched by an upgrade.
+
+## Adapting for your tool
+
+The three agents are plain markdown with frontmatter. If your tool uses a
+different subagent format, keep the bodies and change only the frontmatter
+fields. The bodies carry the actual method; the frontmatter is plumbing.

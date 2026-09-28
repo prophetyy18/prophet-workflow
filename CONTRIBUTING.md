@@ -1,7 +1,6 @@
 # Contributing
 
-Use Python 3.10 or newer. Create an isolated environment, then install the local
-development dependencies:
+Python 3.10 or newer.
 
 ```bash
 python3 -m venv .venv
@@ -9,9 +8,25 @@ python3 -m venv .venv
 make check
 ```
 
-Controller changes should stay domain-neutral and include regression coverage.
-Do not commit generated caches, workflow worktrees, runtime records, secrets, or a
-consumer project's `workflow.yml`.
+## What to change
 
-For a release, update the version in `pyproject.toml`, the compatibility matrix and
-the relevant entries in `CHANGELOG.md` together.
+The agent prompts in `.claude/agents/` are the product. When you change one,
+say in the PR **which failure mode it prevents** — a prompt change with no
+targeted failure is usually a matter of taste and usually wrong.
+
+The helper in `tools/prophet/` stays small and standard-library-only. Changes to
+`_finding_lines` require tests: it is the incremental-baseline mechanism, and
+if it under-reports, every regression gate downstream becomes decorative.
+
+Do not reintroduce a state machine, task-contract freeze, amendment process, or
+structured inter-agent handoff. Each was measured and removed; see
+`docs/why-v2.md` for the numbers.
+
+## Hygiene
+
+Do not commit caches, slice worktrees (`.prophet-worktrees/`), or
+`.prophet/baseline.json`. `.prophet/spec.md`, `LOG.md`, and `DECISIONS.md` are
+project content and belong in version control when present.
+
+For a release, update the version in `pyproject.toml` and `CHANGELOG.md`
+together.

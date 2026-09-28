@@ -6,44 +6,64 @@ All notable changes to this template are recorded here. The format follows
 
 ## Versioning policy
 
-- **MAJOR** (x.0.0): changes to the state machine, required schema fields,
-  the protected-path invariant, the continuation mechanic, or any seam
-  semantic that breaks `workflow.yml` compatibility.
-- **MINOR** (0.x.0): new commands, new optional `workflow.yml` fields
-  (with defaults), new agent roles, new structured-result fields
-  (optional). Existing consumer configurations continue to work.
-- **PATCH** (0.0.x): bug fixes, internal refactors, documentation. No
-  behavior change visible to a consumer's workflow.
+v2 has no state machine, no schema, and no configuration seam, so the historical
+version policy no longer applies. What matters now is only: **do the agent
+prompts and the helper's behaviour change in a way a consuming project would
+notice?**
 
-## Compatibility matrix
+- **MAJOR** — the loop's shape changes, an agent's method changes materially,
+  or the helper's commands change incompatibly.
+- **MINOR** — a new agent, a new helper command, a new finding format parsed.
+- **PATCH** — fixes and documentation.
 
-| Template version | Consumer `workflow.yml` version | Notes |
-|---|---|---|
-| 1.1.x | 1 | Backward-compatible recoverability, review persistence, and project tooling. |
-| 1.0.0 | 1 | Initial release. |
+## Compatibility
+
+| Template | Consumer upgrade |
+|---|---|
+| 2.x | Copy `.claude/agents/*.md` and `tools/prophet/` over the project. `.prophet/spec.md`, `LOG.md`, and `DECISIONS.md` are untouched. |
+| 1.x | Not compatible. v1 is a different artifact: see `docs/why-v2.md` for what was removed and why. Migrating means adopting the loop and, if you have numbered task contracts, deciding what to keep as history and what to re-plan. |
 
 ## Unreleased
 
-No changes yet.
+Nothing yet.
 
-## 1.1.0 — 2026-09-21
+## 2.0.0
+
+The loop replaces the state machine. Measurements and reasoning:
+`docs/why-v2.md`.
 
 ### Added
 
-- Python packaging, local quality commands, CI, repository policies, and a
-  regression suite for the reusable controller.
-- `withdraw-amendment`, with durable `APPROVED` and `ABANDONED` amendment
-  records that do not block later work.
-- Backward-compatible `original_base_commit` amendment records for safe retries.
+- Three agents: `builder` (implement a slice, produce a runnable artifact),
+  `critic` (attack a candidate, propose the next hypothesis, no verdict and no
+  fix permission), `shaper` (write the falsifiable hypothesis, rewrite the spec
+  each round, record decisions).
+- `.prophet/` convention: `spec.md` (rewritten every round), `LOG.md` (what
+  actually happened, append-only), `DECISIONS.md` (choices and why).
+- `tools/prophet/`: `init`, `new`, `baseline`, `gates`, `status`.
+- Incremental gate judgement — `baseline` records existing findings, `gates`
+  fails only when a slice adds findings. A red baseline blocks nobody.
+- `baseline` refuses to record when a gate cannot run at all, since an empty
+  baseline would make every later regression invisible.
+- Risk tiers (disposable / product / irreversible), assigned by what a slice
+  does rather than by which module it lives in.
 
-### Fixed
+### Removed
 
-- Persist failed and blocked review state with review evidence in the candidate
-  branch instead of discarding the state update.
-- Include the previous independent review in task retry prompts.
-- Restore missing `PlanRecord` deserialization and `maintenance-status` support.
-- Persist maintenance review evidence before resolving its worktree.
+- Task state machine and `todo/config.yaml`. State belongs in git.
+- Amendment axis and its four layers. Rewriting a plan is the normal case.
+- Structured JSON handoffs. The human now reads an artifact directly.
+- Protected-path snapshots. A CI check and a visible diff answer the same
+  question without a mechanism to maintain.
+- Retirement (`SUPERSEDE`) semantics. Git keeps history on its own.
+- The single-active-work lane. Independent slices may proceed at once.
+- `workflow.yml` and the whole Layer 1 / 2 / 3 policy split. There is no
+  machinery left to parameterize.
+- Constitutional and escalation vocabulary. Governance that the project may
+  rewrite is not constitutional.
 
-## 1.0.0 — initial
+### Changed
 
-First published version.
+- The template no longer ships a controller. A project adapts it by editing its
+  own agent files, which is the supported path rather than a fork.
+- Runtime dependencies: none. The helper is standard-library only.
