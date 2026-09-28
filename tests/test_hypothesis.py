@@ -233,3 +233,77 @@ class TestCheckSpec(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# --- regressions found by using the checker for real ------------------------
+#
+# These two were not hypothetical. A spec written across three wrapped lines
+# had its Outcome truncated to the first line, and the vague-word list was
+# English-only, so a spec saying "更健壮" passed every check.
+
+
+def test_multiline_outcome_is_not_truncated() -> None:
+    """A wrapped Outcome is still an Outcome.
+
+    The first line of a wrapped Chinese sentence can read as vague while the
+    rest carries the number that makes it measurable. Reading one line lets
+    the vagueness hide, or lets a real problem hide behind the wrap.
+    """
+    spec = """# Current hypothesis
+
+**Round:** R9
+**Tier:** 1
+
+## Hypothesis
+
+**Change:** 把常数写成代码
+**Outcome:** 探针在两个端点都退出 0，
+费用积分与 StateView 读数相差不超过 0.01 USDG
+**Verify by:** `python -m robinhood_lp_v2.probe`
+"""
+    errors, _ = check_spec(spec)
+    assert errors == [], f"unexpected: {errors}"
+
+    slots = _slot_values(spec)
+    assert slots["Outcome"] is not None
+    assert "StateView" in slots["Outcome"], "second line was dropped"
+    assert "0.01" in slots["Outcome"], "number on the wrapped line was dropped"
+
+
+def test_chinese_vague_words_are_rejected() -> None:
+    """The vague list was English, so Chinese specs bypassed the check.
+
+    This project writes its specs in Chinese. "更健壮" is the same
+    unobservable claim as "more robust", and it used to pass.
+    """
+    spec = """# Current hypothesis
+
+**Round:** R9
+**Tier:** 1
+
+## Hypothesis
+
+**Change:** 重构采集层
+**Outcome:** 代码变得更健壮，扫描速度提升
+**Verify by:** `pytest`
+"""
+    errors, _ = check_spec(spec)
+    assert errors, "Chinese vague wording passed the falsifiability check"
+    assert "更健壮" in errors[0]
+
+
+def test_chinese_measurement_is_accepted() -> None:
+    """A Chinese outcome carrying a number is still falsifiable."""
+    spec = """# Current hypothesis
+
+**Round:** R9
+**Tier:** 1
+
+## Hypothesis
+
+**Change:** 采集一个池的全部事件
+**Outcome:** 在 3 分钟内取到 3739 个事件，官网与 Alchemy 计数一致
+**Verify by:** `python -m robinhood_lp_v2.ingest`
+"""
+    errors, _ = check_spec(spec)
+    assert errors == [], f"a measurable Chinese outcome was rejected: {errors}"

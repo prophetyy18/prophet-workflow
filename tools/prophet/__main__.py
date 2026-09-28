@@ -512,11 +512,70 @@ VAGUE_DERIVED = (
     "reliability",
 )
 
-_ALL_VAGUE = tuple(VAGUE_TERMS) + VAGUE_DERIVED
+# Chinese equivalents of the same failure. The word lists above are English
+# because they were written against English specs; a spec written in Chinese
+# passed every check while saying "更健壮" and "更快", which no observation
+# can settle. Kept separate from the English lists because the comparative
+# exemption is phrased in English only.
+VAGUE_TERMS_ZH = (
+    "更健壮",
+    "更稳健",
+    "健壮",
+    "稳健",
+    "更好",
+    "更好一些",
+    "更优",
+    "优化后",
+    "更快",
+    "更高效",
+    "更高",
+    "更准确",
+    "更可靠",
+    "更稳定",
+    "更清晰",
+    "更易用",
+    "更友好",
+    "改进",
+    "改善",
+    "提升",
+    "增强",
+    "优化",
+    "重构",
+    "更简洁",
+    "更清晰",
+    "显著",
+    "大幅",
+    "明显",
+    "良好",
+    "合理",
+    "妥善",
+    "正确地",
+    "恰当地",
+    "尽可能",
+    "适度",
+    "有效",
+    "高效",
+    "稳定",
+    "健壮性",
+    "鲁棒",
+    "性能更好",
+    "体验更好",
+    "基本",
+    "大致",
+    "应该可以",
+    "差不多",
+)
 
+_ALL_VAGUE = tuple(VAGUE_TERMS) + tuple(VAGUE_DERIVED) + VAGUE_TERMS_ZH
+
+# \b does not fire between a CJK character and a non-CJK one, so \b("健壮")
+# fails to match "更健壮". Give the CJK alternatives their own pattern.
 _VAGUE_RE = re.compile(
     r"\b(" + "|".join(re.escape(t) for t in sorted(_ALL_VAGUE, key=len, reverse=True)) + r")\b",
     re.IGNORECASE,
+)
+_VAGUE_RE_ZH = re.compile(
+    "|".join(re.escape(t) for t in sorted(VAGUE_TERMS_ZH, key=len, reverse=True))
 )
 
 
@@ -575,14 +634,19 @@ def _vague_hits(text: str) -> list[tuple[str, int, str]]:
     """Return (term, line number, line) for each vague term in `text`.
 
     A comparative word on a line that also contains a number is not a finding:
-    "12 rows instead of 15" is measurable, "more rows" is not.
+    "12 rows instead of 15" is measurable, "more rows" is not. The exemption
+    is English-only by construction — the CJK terms are never exempt, because
+    a Chinese comparative with a number nearby ("更快，从 200ms 到 150ms") is
+    still worth a human look.
     """
     hits = []
     for n, line in enumerate(text.splitlines(), start=1):
         has_number = bool(_NUMERIC.search(line))
         seen: set[str] = set()
-        for m in _VAGUE_RE.finditer(line):
-            term = m.group(1).lower()
+        found: list[str] = [m.group(1) for m in _VAGUE_RE.finditer(line)]
+        found += _VAGUE_RE_ZH.findall(line)
+        for term in found:
+            term = term.lower()
             if term in seen:
                 continue
             # Exempt a comparative ONLY when this line carries a number.
@@ -612,16 +676,26 @@ def _is_placeholder(value: str) -> bool:
 def _slot_values(spec: str) -> dict[str, str | None]:
     """Extract the three required slot values from a spec.
 
+    A slot runs until the next slot marker, a heading, or a blank line —
+    not just to the end of its first line. A hypothesis written across three
+    wrapped lines is the normal case, and reading only the first line let a
+    vague word hide behind the wrap.
+
     A slot present but still holding the starter template's placeholder is
     reported as missing, not as filled in.
     """
     out: dict[str, str | None] = {}
+    stops = "|".join(re.escape(s) for s in SLOTS)
     for slot in SLOTS:
-        m = re.search(rf"^\s*\*\*{re.escape(slot)}:?\*\*:?\s*(.+)$", spec, re.M)
+        pattern = (
+            rf"^\s*\*\*{re.escape(slot)}:?\*\*:?[ \t]*(.*?)"
+            rf"(?=\n[ \t]*(?:\*\*(?:{stops})|##|\Z)|\n[ \t]*\n|\Z)"
+        )
+        m = re.search(pattern, spec, re.M | re.S)
         if not m:
             out[slot] = None
             continue
-        value = m.group(1).strip()
+        value = " ".join(m.group(1).split()).strip()
         out[slot] = None if _is_placeholder(value) else value
     return out
 
